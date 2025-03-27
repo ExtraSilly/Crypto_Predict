@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Price Tracker</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        .container { max-width: 700px; margin: auto; }
+        .card { background: #f4f4f4; padding: 20px; border-radius: 10px; display: inline-block; }
+        input, button { padding: 10px; margin: 10px; border-radius: 5px; border: 1px solid #ccc; }
+        button { cursor: pointer; background-color: #28a745; color: white; border: none; }
+        button:hover { background-color: #218838; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        table, th, td { border: 1px solid #ddd; }
+        th, td { padding: 10px; text-align: center; }
+        th { background-color: #007bff; color: white; }
+        .error { color: red; font-weight: bold; }
+        .green { color: green; }
+        .red { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Crypto Price Tracker</h1>
+        
+        <!-- Form nhập loại crypto -->
+        <form method="GET" action="">
+            <input type="text" name="symbol" placeholder="Nhập mã (VD: BTC-USDT)" required>
+            <button type="submit">Tìm kiếm</button>
+        </form>
+
+        {% if symbol %}
+            {% if error %}
+                <p class="error">{{ error }}</p>
+            {% else %}
+                <div class="card">
+                    <h2>Thông tin: {{ symbol }}</h2>
+                    <table>
+                        <tr>
+                            <th>Giá Hiện Tại (USD)</th>
+                            <th>Cao Nhất 24h</th>
+                            <th>Thấp Nhất 24h</th>
+                            <th>Khối Lượng</th>
+                            <th>Thay Đổi 24h (%)</th>
+                            <th>Thời Gian Cập Nhật</th>
+                        </tr>
+                        <tr>
+                            <td>{{ price }}</td>
+                            <td>{{ high }}</td>
+                            <td>{{ low }}</td>
+                            <td>{{ volume }}</td>
+                            <td class="{% if percentage_change >= 0 %}green{% else %}red{% endif %}">
+                                {{ percentage_change }}%
+                            </td>
+                            <td>{{ last_updated }}</td>
+                        </tr>
+                    </table>
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>

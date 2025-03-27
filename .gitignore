@@ -1,0 +1,16 @@
+# Django migration files
+*/migrations/0*.py
+*/migrations/__pycache__/
+
+# virtual environment
+venv/
+
+# Các file cache Python
+__pycache__/
+*.py[cod]
+
+# Database
+db.sqlite3
+
+# file media (nếu bạn không muốn đẩy media lên)
+media/
