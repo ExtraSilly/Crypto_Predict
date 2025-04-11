@@ -1,0 +1,133 @@
+{% extends 'app/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% else %}
+    <!-- Settings Form -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Market Data Settings</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label for="symbol" class="form-label">Symbol:</label>
+                    <div class="input-group">
+                        <select class="form-select" id="symbol-select" onchange="updateSymbolInput()">
+                            <option value="">Select or enter custom</option>
+                            {% for available_symbol in symbols %}
+                            <option value="{{ available_symbol }}" {% if symbol == available_symbol %}selected{% endif %}>
+                                {{ available_symbol }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <input type="text" class="form-control" id="symbol" name="symbol" 
+                               placeholder="Enter symbol (e.g. BTC-USDT)" value="{{ symbol }}"
+                               pattern="[A-Za-z0-9]+-[A-Za-z0-9]+" title="Format: SYMBOL-PAIR (e.g. BTC-USDT)">
+                    </div>
+                    <small class="form-text text-muted">Format: SYMBOL-PAIR (e.g. BTC-USDT)</small>
+                </div>
+                <div class="col-md-3">
+                    <label for="timeframe" class="form-label">Timeframe:</label>
+                    <select class="form-select" id="timeframe" name="timeframe">
+                        <option value="1m" {% if timeframe == '1m' %}selected{% endif %}>1 Minute</option>
+                        <option value="5m" {% if timeframe == '5m' %}selected{% endif %}>5 Minutes</option>
+                        <option value="15m" {% if timeframe == '15m' %}selected{% endif %}>15 Minutes</option>
+                        <option value="1h" {% if timeframe == '1h' %}selected{% endif %}>1 Hour</option>
+                        <option value="4h" {% if timeframe == '4h' %}selected{% endif %}>4 Hours</option>
+                        <option value="1d" {% if timeframe == '1d' %}selected{% endif %}>1 Day</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="limit" class="form-label">Display Rows:</label>
+                    <select class="form-select" id="limit" name="limit">
+                        <option value="50" {% if limit == 50 %}selected{% endif %}>50 rows</option>
+                        <option value="100" {% if limit == 100 %}selected{% endif %}>100 rows</option>
+                        <option value="200" {% if limit == 200 %}selected{% endif %}>200 rows</option>
+                        <option value="500" {% if limit == 500 %}selected{% endif %}>500 rows</option>
+                        <option value="1000" {% if limit == 1000 %}selected{% endif %}>1000 rows</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="submit" class="btn btn-primary d-block">Update</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div id="chart"></div>
+        </div>
+    </div>
+
+    <!-- Data Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Historical Data</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Open</th>
+                            <th>High</th>
+                            <th>Low</th>
+                            <th>Close</th>
+                            <th>Volume</th>
+                            <th>RSI</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in table_data %}
+                        <tr>
+                            <td>{{ row.timestamp }}</td>
+                            <td>${{ row.open|floatformat:2 }}</td>
+                            <td>${{ row.high|floatformat:2 }}</td>
+                            <td>${{ row.low|floatformat:2 }}</td>
+                            <td>${{ row.close|floatformat:2 }}</td>
+                            <td>{{ row.volume|floatformat:2 }}</td>
+                            <td>
+                                {% if row.rsi %}
+                                    <span class="{% if row.rsi >= 70 %}text-danger{% elif row.rsi <= 30 %}text-success{% endif %}">
+                                        {{ row.rsi|floatformat:2 }}
+                                    </span>
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+    // Initialize chart
+    var chartData = {{ plot_data|safe }};
+    Plotly.newPlot('chart', chartData.data, chartData.layout);
+    
+    // Function to update symbol input when dropdown selection changes
+    function updateSymbolInput() {
+        var select = document.getElementById('symbol-select');
+        var input = document.getElementById('symbol');
+        if (select.value) {
+            input.value = select.value;
+        }
+    }
+</script>
+{% endblock %} 

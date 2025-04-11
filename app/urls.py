@@ -8,6 +8,7 @@ urlpatterns = [
     # Trang chủ & xác thực người dùng
     path('', views.home, name="home"),
     path('index/', views.crypto_price, name="index"),
-   
-    path('arima-predict/', views.arima_predict, name="arima_predict"),
+    path('market-data/', views.market_data, name='market_data'),
+    path('fundamental-analysis/', views.fundamental_analysis, name='fundamental_analysis'),
+    
 ]

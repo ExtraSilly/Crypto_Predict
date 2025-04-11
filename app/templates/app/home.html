@@ -1,100 +1,43 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Analysis Platform</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .header {
-            background-color: #007bff;
-            color: white;
-            padding: 20px 0;
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        .nav-links {
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            margin-bottom: 40px;
-        }
-        .nav-link {
-            padding: 15px 30px;
-            background-color: white;
-            color: #007bff;
-            text-decoration: none;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            transition: transform 0.2s;
-        }
-        .nav-link:hover {
-            transform: translateY(-3px);
-        }
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 40px;
-        }
-        .feature-card {
-            background-color: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .feature-card h3 {
-            color: #007bff;
-            margin-top: 0;
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>Crypto Analysis Platform</h1>
-        <p>Track prices and predict future trends</p>
-    </div>
+{% extends 'app/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="text-center mb-4">Cryptocurrency Analysis Platform</h1>
     
-    <div class="container">
-        <div class="nav-links">
-            <a href="{% url 'index' %}" class="nav-link">Price Tracker</a>
-           
-            <a href="{% url 'arima_predict' %}" class="nav-link">ARIMA Prediction</a>
+    <div class="row g-4">
+        <!-- Market Data Card -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Market Data</h5>
+                    <p class="card-text">View detailed OHLCV data with RSI indicator for various cryptocurrencies. Analyze price movements and trading signals.</p>
+                    <a href="{% url 'market_data' %}" class="btn btn-primary">View Market Data</a>
+                </div>
+            </div>
         </div>
         
-        <div class="features">
-            <div class="feature-card">
-                <h3>Real-time Price Tracking</h3>
-                <p>Get instant access to current cryptocurrency prices, 24-hour highs and lows, and trading volume.</p>
+        <!-- Technical Analysis Card -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Technical Analysis</h5>
+                    <p class="card-text">Perform technical analysis with various indicators and view historical price data.</p>
+                    <a href="{% url 'index' %}" class="btn btn-primary">View Analysis</a>
+                </div>
             </div>
-            <div class="feature-card">
-                <h3>Price Predictions</h3>
-                <p>Choose between two powerful prediction models to forecast future price movements.</p>
-            </div>
-            <div class="feature-card">
-                <h3>Quantitative Analysis</h3>
-                <p>Advanced statistical models (ARIMA, GARCH, Cointegration) for sophisticated price analysis and forecasting.</p>
-            </div>
-            <div class="feature-card">
-                <h3>Interactive Charts</h3>
-                <p>Visualize historical data and predictions with interactive charts and graphs.</p>
-            </div>
-            <div class="feature-card">
-                <h3>ARIMA Prediction</h3>
-                <p>Advanced time series analysis using ARIMA model for accurate price forecasting.</p>
+        </div>
+
+        <!-- Fundamental Analysis Card -->
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Fundamental Analysis</h5>
+                    <p class="card-text">Evaluate cryptocurrency fundamentals including technology, community, and real-world applications.</p>
+                    <a href="{% url 'fundamental_analysis' %}" class="btn btn-primary">View Analysis</a>
+                </div>
             </div>
         </div>
     </div>
-</body>
-</html>
+</div>
+{% endblock %}

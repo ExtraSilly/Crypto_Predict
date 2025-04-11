@@ -1,0 +1,205 @@
+{% extends 'app/base.html' %}
+{% load static %}
+{% load custom_filters %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% else %}
+    <!-- Settings Form -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Fundamental Analysis Settings</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-12">
+                    <label for="symbol" class="form-label">Select Cryptocurrency:</label>
+                    <div class="input-group">
+                        <select class="form-select" id="symbol-select" onchange="updateSymbolInput()">
+                            <option value="">Select or enter custom</option>
+                            {% for available_symbol in symbols %}
+                            <option value="{{ available_symbol }}" {% if symbol == available_symbol %}selected{% endif %}>
+                                {{ available_symbol }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <input type="text" class="form-control" id="symbol" name="symbol" 
+                               placeholder="Enter symbol (e.g. BTC-USDT)" value="{{ symbol }}"
+                               pattern="[A-Za-z0-9]+-[A-Za-z0-9]+" title="Format: SYMBOL-PAIR (e.g. BTC-USDT)">
+                    </div>
+                    <small class="form-text text-muted">Format: SYMBOL-PAIR (e.g. BTC-USDT)</small>
+                </div>
+                <div class="col-md-12">
+                    <button type="submit" class="btn btn-primary">Analyze</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Fundamental Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Market Metrics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Market Cap:</strong> ${{ fundamental_metrics.market_cap|floatformat:2 }}</p>
+                            <p><strong>24h Volume:</strong> ${{ fundamental_metrics.volume_price_ratio|floatformat:2 }}</p>
+                            <p><strong>Price Change (24h):</strong> 
+                                <span class="{% if fundamental_metrics.price_change_24h >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                    {{ fundamental_metrics.price_change_24h|floatformat:2 }}%
+                                </span>
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Bid-Ask Spread:</strong> {{ fundamental_metrics.bid_ask_spread|floatformat:2 }}%</p>
+                            <p><strong>Liquidity Score:</strong> {{ fundamental_metrics.liquidity_score|floatformat:2 }}</p>
+                            <p><strong>Circulating Supply:</strong> {{ fundamental_metrics.circulating_supply|floatformat:2 }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Analysis Summary</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <h6>Market Health</h6>
+                        <div class="progress">
+                            <div class="progress-bar {% if fundamental_metrics.liquidity_score >= 70 %}bg-success{% elif fundamental_metrics.liquidity_score >= 40 %}bg-warning{% else %}bg-danger{% endif %}"
+                                 role="progressbar" style="width: {{ fundamental_metrics.liquidity_score }}%">
+                                {{ fundamental_metrics.liquidity_score|floatformat:0 }}%
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <h6>Price Stability</h6>
+                        <div class="progress">
+                            <div class="progress-bar {% if fundamental_metrics.bid_ask_spread <= 0.5 %}bg-success{% elif fundamental_metrics.bid_ask_spread <= 1 %}bg-warning{% else %}bg-danger{% endif %}"
+                                 role="progressbar" style="width: {{ 100|subtract:fundamental_metrics.bid_ask_spread }}%">
+                                {{ 100|subtract:fundamental_metrics.bid_ask_spread|floatformat:0 }}%
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <h6>Market Activity</h6>
+                        <div class="progress">
+                            <div class="progress-bar {% if fundamental_metrics.volume_price_ratio >= 1000 %}bg-success{% elif fundamental_metrics.volume_price_ratio >= 500 %}bg-warning{% else %}bg-danger{% endif %}"
+                                 role="progressbar" style="width: {{ fundamental_metrics.volume_price_ratio|divide:10 }}%">
+                                {{ fundamental_metrics.volume_price_ratio|floatformat:0 }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div id="chart"></div>
+        </div>
+    </div>
+
+    <!-- Additional Analysis -->
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Technology Analysis</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Blockchain Type
+                            <span class="badge bg-primary rounded-pill">PoW</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Consensus Mechanism
+                            <span class="badge bg-info rounded-pill">Proof of Work</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Smart Contracts
+                            <span class="badge bg-success rounded-pill">Supported</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Community Metrics</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            GitHub Activity
+                            <span class="badge bg-primary rounded-pill">High</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Social Media Presence
+                            <span class="badge bg-info rounded-pill">Strong</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Developer Activity
+                            <span class="badge bg-success rounded-pill">Active</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Use Case Analysis</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Payment Solution
+                            <span class="badge bg-primary rounded-pill">Yes</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            DeFi Integration
+                            <span class="badge bg-info rounded-pill">Partial</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            Enterprise Adoption
+                            <span class="badge bg-success rounded-pill">Growing</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+    // Initialize chart
+    var chartData = {{ plot_data|safe }};
+    Plotly.newPlot('chart', chartData.data, chartData.layout);
+    
+    // Function to update symbol input when dropdown selection changes
+    function updateSymbolInput() {
+        var select = document.getElementById('symbol-select');
+        var input = document.getElementById('symbol');
+        if (select.value) {
+            input.value = select.value;
+        }
+    }
+</script>
+{% endblock %} 

@@ -10,12 +10,14 @@ from plotly.subplots import make_subplots
 import json
 import plotly.utils
 from statsmodels.tsa.arima.model import ARIMA
+from arch import arch_model
+import re
 
 # Create your views here.
 
 def home(request):
     context = {}
-    return render(request, 'app/home.html',context)
+    return render(request, 'app/home.html', context)
 
 
 def crypto_price(request):
@@ -50,323 +52,273 @@ def crypto_price(request):
     return render(request, 'app/index.html', context)
 
 
-def arima_predict(request):
-    if request.method == 'POST':
-        try:
-            # Get and validate symbol
-            symbol = request.POST.get('symbol', 'BTC/USDT').strip()
-            if '/' not in symbol:
-                raise ValueError("Invalid symbol format. Use forward slash (/) between crypto and fiat, e.g., ETH/USDT")
-            
-            days = int(request.POST.get('days', 7))
-            
-            # Fetch historical data
-            exchange = ccxt.binance()
-            timeframe = '1d'
-            limit = 365  # Get 1 year of daily data
-            
-            try:
-                ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-            except Exception as e:
-                raise ValueError(f"Error fetching data for {symbol}. Please check if the symbol is valid and available on Binance.")
-            
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
-            
-            # Prepare data for ARIMA
-            data = df['close'].values
-            
-            # Calculate additional features
-            returns = pd.Series(data).pct_change()
-            volatility = returns.std()
-            
-            # Try different ARIMA parameters with more combinations
-            best_aic = float('inf')
-            best_model = None
-            best_params = None
-            best_score = float('-inf')
-            
-            # Expanded parameter combinations to try
-            p_values = [0, 1, 2, 3, 4, 5]
-            d_values = [0, 1, 2]
-            q_values = [0, 1, 2, 3, 4, 5]
-            
-            # Suppress warnings during model fitting
-            import warnings
-            warnings.filterwarnings('ignore')
-            
-            # Calculate training and validation split
-            train_size = int(len(data) * 0.8)
-            train_data = data[:train_size]
-            val_data = data[train_size:]
-            
-            for p in p_values:
-                for d in d_values:
-                    for q in q_values:
-                        try:
-                            # Fit model on training data
-                            model = ARIMA(train_data, order=(p, d, q))
-                            results = model.fit(method='lbfgs', maxiter=1000)
-                            
-                            # Calculate validation metrics
-                            val_forecast = results.forecast(steps=len(val_data))
-                            mse = np.mean((val_forecast - val_data) ** 2)
-                            mae = np.mean(np.abs(val_forecast - val_data))
-                            
-                            # Combined score (lower is better)
-                            score = mse + mae
-                            
-                            # Check if this is the best model
-                            if score < best_score and not np.isnan(results.aic):
-                                best_score = score
-                                best_aic = results.aic
-                                best_model = results
-                                best_params = {'p': p, 'd': d, 'q': q}
-                        except:
-                            continue
-            
-            # If no model was found, try a more sophisticated fallback
-            if best_model is None:
-                # Calculate multiple technical indicators
-                sma_7 = pd.Series(data).rolling(window=7).mean()
-                sma_14 = pd.Series(data).rolling(window=14).mean()
-                sma_30 = pd.Series(data).rolling(window=30).mean()
-                
-                # Calculate RSI
-                delta = pd.Series(data).diff()
-                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-                rs = gain / loss
-                rsi = 100 - (100 / (1 + rs))
-                
-                # Calculate trend strength
-                trend_strength = abs(sma_7.iloc[-1] - sma_30.iloc[-1]) / sma_30.iloc[-1]
-                
-                # Determine trend direction with RSI confirmation
-                trend = 0
-                if sma_7.iloc[-1] > sma_14.iloc[-1] > sma_30.iloc[-1] and rsi.iloc[-1] > 50:
-                    trend = 1  # Strong upward trend
-                elif sma_7.iloc[-1] < sma_14.iloc[-1] < sma_30.iloc[-1] and rsi.iloc[-1] < 50:
-                    trend = -1  # Strong downward trend
-                
-                # Generate daily predictions with trend and volatility
-                base_price = sma_7.iloc[-1]
-                forecast = []
-                for i in range(days):
-                    # Add trend and volatility with momentum
-                    momentum = trend * trend_strength
-                    daily_change = momentum + np.random.normal(0, volatility)
-                    price = base_price * (1 + daily_change)
-                    forecast.append(price)
-                    base_price = price
-                
-                forecast = np.array(forecast)
-                
-                # Calculate dynamic confidence intervals based on volatility
-                conf_int = pd.DataFrame({
-                    'lower': forecast * (1 - volatility * 1.5),
-                    'upper': forecast * (1 + volatility * 1.5)
-                })
-                
-                # Update parameters to reflect the technical analysis model
-                best_params = {
-                    'p': 7,  # 7-day SMA
-                    'd': 1,  # First-order differencing for trend
-                    'q': 14  # 14-day RSI
-                }
-                best_aic = 8000  # Adjusted AIC for technical analysis model
-            else:
-                # Make prediction with the best model
-                forecast = best_model.forecast(steps=days)
-                conf_int = best_model.get_forecast(steps=days).conf_int()
-            
-            # Create prediction dates
-            last_date = df.index[-1]
-            pred_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=days, freq='D')
-            
-            # Create prediction DataFrame
-            pred_df = pd.DataFrame({
-                'date': pred_dates,
-                'predicted_price': forecast,
-                'lower_bound': conf_int.iloc[:, 0],
-                'upper_bound': conf_int.iloc[:, 1]
-            })
-            
-            # Calculate prediction range
-            min_price = round(pred_df['lower_bound'].min(), 2)
-            max_price = round(pred_df['upper_bound'].max(), 2)
-            
-            # Create main price chart
-            fig = go.Figure()
-            
-            # Add historical data
-            fig.add_trace(go.Scatter(
-                x=df.index,
-                y=df['close'],
-                name='Historical',
-                line=dict(color='blue')
-            ))
-            
-            # Add prediction
-            fig.add_trace(go.Scatter(
-                x=pred_dates,
-                y=forecast,
-                name='Prediction',
-                line=dict(color='red', dash='dash')
-            ))
-            
-            # Add confidence intervals
-            fig.add_trace(go.Scatter(
-                x=pred_dates,
-                y=conf_int.iloc[:, 1],
-                fill=None,
-                mode='lines',
-                line_color='rgba(255,0,0,0)',
-                name='Upper Bound'
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=pred_dates,
-                y=conf_int.iloc[:, 0],
-                fill='tonexty',
-                mode='lines',
-                line_color='rgba(255,0,0,0)',
-                name='Lower Bound'
-            ))
-            
-            # Update layout
-            fig.update_layout(
-                title=f'{symbol} Price Prediction',
-                xaxis=dict(title='Date'),
-                yaxis=dict(title='Price (USD)'),
-                showlegend=True
-            )
-            
-            # Create daily prediction chart
-            daily_fig = go.Figure()
-            
-            # Add predicted prices
-            daily_fig.add_trace(go.Scatter(
-                x=pred_df['date'],
-                y=pred_df['predicted_price'],
-                name='Predicted Price',
-                line=dict(color='red')
-            ))
-            
-            # Add confidence intervals
-            daily_fig.add_trace(go.Scatter(
-                x=pred_df['date'],
-                y=pred_df['upper_bound'],
-                fill=None,
-                mode='lines',
-                line_color='rgba(255,0,0,0)',
-                name='Upper Bound'
-            ))
-            
-            daily_fig.add_trace(go.Scatter(
-                x=pred_df['date'],
-                y=pred_df['lower_bound'],
-                fill='tonexty',
-                mode='lines',
-                line_color='rgba(255,0,0,0)',
-                name='Lower Bound'
-            ))
-            
-            # Update layout for daily chart
-            daily_fig.update_layout(
-                title=f'{symbol} Daily Price Predictions',
-                xaxis=dict(title='Date'),
-                yaxis=dict(title='Price (USD)'),
-                showlegend=True
-            )
-            
-            # Convert figures to JSON
-            plot_data = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
-            daily_plot_data = json.loads(json.dumps(daily_fig, cls=plotly.utils.PlotlyJSONEncoder))
-            
-            # Calculate price change percentage
-            current_price = df['close'].iloc[-1]
-            predicted_price = forecast[-1]
-            price_change = ((predicted_price - current_price) / current_price) * 100
-            
-            # Calculate model confidence based on multiple factors
-            if best_model is not None:
-                # 1. Validation performance (50% weight)
-                val_performance = 1 - (best_score / (np.mean(val_data) ** 2))
-                val_score = max(0, min(1, val_performance)) * 50
-                
-                # 2. AIC score (20% weight)
-                aic_score = max(0, min(1, 1 - (best_aic / 15000))) * 20
-                
-                # 3. Model complexity (15% weight)
-                complexity_score = max(0, min(1, 1 - (best_params['p'] + best_params['q']) / 15)) * 15
-                
-                # 4. Data quality (15% weight)
-                data_quality = min(1, len(data) / 365)  # More data = higher quality
-                quality_score = data_quality * 15
-                
-                # Combine scores and add base confidence
-                model_confidence = val_score + aic_score + complexity_score + quality_score + 20  # Add 20% base confidence
-            else:
-                # For fallback model, calculate confidence based on technical indicators
-                # 1. RSI strength (30% weight)
-                rsi_strength = abs(50 - rsi.iloc[-1]) / 50
-                rsi_score = rsi_strength * 30
-                
-                # 2. Trend strength (30% weight)
-                trend_score = min(1, trend_strength * 2) * 30  # Amplify trend strength
-                
-                # 3. Volatility stability (20% weight)
-                vol_stability = 1 - min(1, volatility * 2)  # Amplify volatility effect
-                vol_score = vol_stability * 20
-                
-                # 4. Moving average alignment (20% weight)
-                ma_alignment = 0
-                if (sma_7.iloc[-1] > sma_14.iloc[-1] > sma_30.iloc[-1]) or (sma_7.iloc[-1] < sma_14.iloc[-1] < sma_30.iloc[-1]):
-                    ma_alignment = 1
-                ma_score = ma_alignment * 20
-                
-                # Combine scores and add base confidence
-                model_confidence = rsi_score + trend_score + vol_score + ma_score + 30  # Add 30% base confidence
-            
-            # Ensure confidence is between 0 and 100
-            model_confidence = max(0, min(100, model_confidence))
-            
-            # Round to 2 decimal places
-            model_confidence = round(model_confidence, 2)
-            
-            # Prepare prediction table data
-            prediction_table = []
-            for _, row in pred_df.iterrows():
-                prediction_table.append({
-                    'date': row['date'].strftime('%Y-%m-%d'),
-                    'price': round(row['predicted_price'], 2),
-                    'lower': round(row['lower_bound'], 2),
-                    'upper': round(row['upper_bound'], 2)
-                })
-            
-            context = {
-                'symbol': symbol,
-                'plot_data': json.dumps(plot_data),
-                'daily_plot_data': json.dumps(daily_plot_data),
-                'current_price': current_price,
-                'predicted_price': predicted_price,
-                'price_change': price_change,
-                'model_confidence': model_confidence,
-                'arima_params': best_params,
-                'days': days,
-                'prediction_table': prediction_table,
-                'min_price': min_price,
-                'max_price': max_price
-            }
-            
-        except Exception as e:
-            context = {'error': str(e)}
-            
-        return render(request, 'app/arima_predict.html', context)
+def market_data(request):
+    exchange = ccxt.binance({'timeout': 10000})  # Đặt thời gian timeout API là 10s
     
-    return render(request, 'app/arima_predict.html')
+    # Lấy symbol từ request và chuyển đổi sang định dạng chuẩn
+    symbol = request.GET.get('symbol', 'BTC-USDT').upper().replace('/', '-')
+    if '-' not in symbol:
+        symbol = 'BTC-USDT'
+    symbol_ccxt = symbol.replace('-', '/')
+    
+    # Kiểm tra tính hợp lệ của timeframe
+    valid_timeframes = ['1m', '5m', '15m', '1h', '4h', '1d', '1w']
+    timeframe = request.GET.get('timeframe', '1h')
+    if timeframe not in valid_timeframes:
+        timeframe = '1h'
+    
+    # Lấy limit từ request và đảm bảo ít nhất có 14 dữ liệu cho việc tính RSI
+    try:
+        limit = int(request.GET.get('limit', 100))
+        limit = max(limit + 14, 114)  # Thêm 14 điểm dữ liệu để tính RSI chính xác
+    except ValueError:
+        limit = 114  # 100 + 14 điểm dữ liệu
+
+    try:
+        # Lấy danh sách các cặp giao dịch USDT và loại bỏ cặp trùng lặp
+        markets = exchange.load_markets()
+        symbols = sorted({
+            market.replace('/USDT/USDT', '/USDT').replace('/', '-') 
+            for market in markets if '/USDT' in market
+        })
+
+        # Lấy dữ liệu OHLCV
+        ohlcv = exchange.fetch_ohlcv(symbol_ccxt, timeframe, limit=limit)
+        
+        # Chuyển dữ liệu OHLCV sang DataFrame
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms').dt.tz_localize('UTC').dt.tz_convert('Asia/Ho_Chi_Minh')
+        
+        # Tính toán sự thay đổi giá
+        df['price_change'] = df['close'].diff()
+        
+        # Tính toán lợi nhuận và thua lỗ
+        df['gain'] = df['price_change'].apply(lambda x: x if x > 0 else 0)
+        df['loss'] = df['price_change'].apply(lambda x: abs(x) if x < 0 else 0)
+        
+        # Tính toán trung bình lợi nhuận và thua lỗ
+        window = 14
+        df['avg_gain'] = df['gain'].rolling(window=window, min_periods=window).mean()
+        df['avg_loss'] = df['loss'].rolling(window=window, min_periods=window).mean()
+        
+        # Tính toán RS và RSI
+        df['rs'] = df['avg_gain'] / df['avg_loss']
+        df['rsi'] = np.nan  # Khởi tạo cột RSI với giá trị NaN
+        mask = df.index >= window-1  # Tạo mask cho các dòng từ 14 trở đi
+        df.loc[mask, 'rsi'] = 100 - (100 / (1 + df.loc[mask, 'rs']))
+        
+        # Xử lý các trường hợp đặc biệt (chỉ cho các dòng đã có RSI)
+        df.loc[mask & (df['avg_loss'] == 0), 'rsi'] = 100  # Nếu không có thua lỗ, RSI = 100
+        df.loc[mask & (df['avg_gain'] == 0) & (df['avg_loss'] == 0), 'rsi'] = 50  # Nếu không có thay đổi, RSI = 50
+        
+        # Chỉ giữ lại số lượng dòng theo yêu cầu ban đầu
+        df = df.iloc[-limit+14:]  # Bỏ 14 dòng đầu đã dùng để tính RSI
+        
+        # Đảm bảo dòng đầu tiên là NaN
+        df.iloc[0, df.columns.get_loc('rsi')] = np.nan
+        
+        # Chuẩn bị dữ liệu bảng
+        df['timestamp'] = df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        table_data = df[['timestamp', 'open', 'high', 'low', 'close', 'volume', 'rsi']].to_dict('records')
+        
+        context = {
+            'symbol': symbol,
+            'timeframe': timeframe,
+            'limit': limit-14,  # Trừ đi 14 dòng đã dùng để tính RSI
+            'table_data': table_data,
+            'symbols': symbols,
+            'error': None
+        }
+    except Exception as e:
+        context = {
+            'symbol': symbol,
+            'timeframe': timeframe,
+            'limit': limit,
+            'symbols': symbols if 'symbols' in locals() else [],
+            'table_data': [],
+            'error': f"Lỗi khi tải dữ liệu cho {symbol}: {str(e)}. Vui lòng thử lại với một cặp khác."
+        }
+    
+    return render(request, 'app/market_data.html', context)
+
+
+def fundamental_analysis(request):
+    try:
+        # Get symbol from request or default to BTC-USDT
+        symbol = request.GET.get('symbol', 'BTC-USDT')
+        
+        # Validate symbol format
+        if not re.match(r'^[A-Za-z0-9]+-[A-Za-z0-9]+$', symbol):
+            symbol = 'BTC-USDT'
+        
+        # Initialize exchange
+        exchange = ccxt.binance()
+        
+        # Load available markets and filter out duplicates
+        markets = exchange.load_markets()
+        symbols = []
+        seen_symbols = set()
+        for market_symbol in markets.keys():
+            if market_symbol.endswith('USDT'):
+                # Remove duplicate USDT pairs (e.g., "BTC-USDT-USDT")
+                base_symbol = market_symbol.split('/')[0]
+                if base_symbol not in seen_symbols:
+                    symbols.append(market_symbol)
+                    seen_symbols.add(base_symbol)
+        symbols.sort()
+        
+        # Convert symbol format for API calls (replace - with /)
+        symbol_ccxt = symbol.replace('-', '/')
+        
+        # Fetch market data
+        ticker = exchange.fetch_ticker(symbol_ccxt)
+        orderbook = exchange.fetch_order_book(symbol_ccxt)
+        
+        # Check if ticker and orderbook data are valid
+        if not ticker or not orderbook:
+            raise ValueError(f"Invalid data for {symbol}. Please try again later.")
+        
+        # Calculate fundamental metrics
+        market_cap = float(ticker['quoteVolume']) if ticker['quoteVolume'] else 0
+        volume_price_ratio = float(ticker['baseVolume']) if ticker['baseVolume'] else 0
+        price_change_24h = float(ticker['percentage']) if ticker['percentage'] else 0
+        
+        # Calculate bid-ask spread
+        best_bid = float(orderbook['bids'][0][0]) if orderbook['bids'] else 0
+        best_ask = float(orderbook['asks'][0][0]) if orderbook['asks'] else 0
+        bid_ask_spread = ((best_ask - best_bid) / best_bid * 100) if best_bid > 0 else 0
+        
+        # Calculate market health score (0-100)
+        # Volume component (30%)
+        volume_score = min(100, (volume_price_ratio / 1000)) * 0.3
+        
+        # Price stability component (30%)
+        stability_score = (100 - min(100, abs(price_change_24h))) * 0.3
+        
+        # Liquidity component (40%)
+        liquidity_score = (100 - min(100, bid_ask_spread * 10)) * 0.4
+        
+        # Combine scores
+        market_health = volume_score + stability_score + liquidity_score
+        
+        # Get circulating supply (this is a placeholder - in reality, you'd need to fetch this from a blockchain explorer)
+        circulating_supply = market_cap / ticker['last'] if ticker['last'] > 0 else 0
+        
+        # Create visualizations
+        # Market metrics gauge
+        gauge_fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=market_health,
+            title={'text': "Market Health Score"},
+            gauge={
+                'axis': {'range': [0, 100]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 40], 'color': "red"},
+                    {'range': [40, 70], 'color': "yellow"},
+                    {'range': [70, 100], 'color': "green"}
+                ]
+            }
+        ))
+        gauge_fig.update_layout(height=300, margin=dict(t=30, b=0, l=0, r=0))
+        
+        # Price stability gauge
+        stability_fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=100 - bid_ask_spread,
+            title={'text': "Price Stability"},
+            gauge={
+                'axis': {'range': [0, 100]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 40], 'color': "red"},
+                    {'range': [40, 70], 'color': "yellow"},
+                    {'range': [70, 100], 'color': "green"}
+                ]
+            }
+        ))
+        stability_fig.update_layout(height=300, margin=dict(t=30, b=0, l=0, r=0))
+        
+        # Market activity gauge
+        activity_fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=min(100, volume_price_ratio / 10),
+            title={'text': "Market Activity"},
+            gauge={
+                'axis': {'range': [0, 100]},
+                'bar': {'color': "darkblue"},
+                'steps': [
+                    {'range': [0, 40], 'color': "red"},
+                    {'range': [40, 70], 'color': "yellow"},
+                    {'range': [70, 100], 'color': "green"}
+                ]
+            }
+        ))
+        activity_fig.update_layout(height=300, margin=dict(t=30, b=0, l=0, r=0))
+        
+        # Combine all figures
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=("Market Health", "Price Stability", "Market Activity", "Price Performance"),
+            specs=[[{"type": "indicator"}, {"type": "indicator"}],
+                  [{"type": "indicator"}, {"type": "xy"}]]
+        )
+        
+        # Add gauge charts
+        for trace in gauge_fig.data:
+            fig.add_trace(trace, row=1, col=1)
+        for trace in stability_fig.data:
+            fig.add_trace(trace, row=1, col=2)
+        for trace in activity_fig.data:
+            fig.add_trace(trace, row=2, col=1)
+        
+        # Add price performance line chart
+        fig.add_trace(
+            go.Scatter(
+                x=[ticker['timestamp']] if 'timestamp' in ticker else [0],  # Handling missing timestamp
+                y=[ticker['last']],
+                mode='lines+markers',
+                name='Current Price',
+                line=dict(color='blue')
+            ),
+            row=2, col=2
+        )
+        
+        # Update layout
+        fig.update_layout(
+            height=800,
+            showlegend=True,
+            title_text=f"Fundamental Analysis - {symbol}",
+            margin=dict(t=50, b=50, l=50, r=50)
+        )
+        
+        # Prepare context
+        context = {
+            'symbol': symbol,
+            'symbols': symbols,
+            'plot_data': fig.to_json(),
+            'fundamental_metrics': {
+                'market_cap': market_cap,
+                'volume_price_ratio': volume_price_ratio,
+                'price_change_24h': price_change_24h,
+                'bid_ask_spread': bid_ask_spread,
+                'market_health': market_health,
+                'component_scores': {
+                    'volume_score': volume_score / 0.3,
+                    'stability_score': stability_score / 0.3,
+                    'liquidity_score': liquidity_score / 0.4
+                },
+                'circulating_supply': circulating_supply
+            }
+        }
+        
+        return render(request, 'app/fundamental_analysis.html', context)
+    except Exception as e:
+        return render(request, 'app/fundamental_analysis.html', {
+            'error': f'Error analyzing {symbol}: {str(e)}',
+            'symbol': symbol,
+            'symbols': symbols if 'symbols' in locals() else []
+        })
 
 
 
